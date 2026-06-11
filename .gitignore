@@ -1,0 +1,5 @@
+.DS_Store
+*.log
+.vercel/
+.gstack/
+node_modules/

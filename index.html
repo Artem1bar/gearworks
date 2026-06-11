@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gearworks — involute gear-train playground</title>
+<meta name="description" content="Interactive involute gear-train playground — real tooth profiles, phase-locked meshing, compound stages, jam detection. One dependency-free file.">
+<meta name="theme-color" content="#0c1220">
+<meta property="og:title" content="Gearworks — involute gear-train playground">
+<meta property="og:description" content="Click to add gears, drag to mesh, stack pinions for compound reductions. Real involute teeth, correct kinematics, jam detection.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚙️</text></svg>">
+<style>
+  :root{
+    --bg:#0c1220; --ink:#dfe8f6; --dim:#8fa1bd; --faint:#64779a;
+    --acc:#5ad7ff; --warn:#ff6b6b;
+    --panel:rgba(13,20,35,.74); --line:rgba(122,168,255,.16);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;color:var(--ink);
+    background:radial-gradient(1300px 900px at 72% -12%, #15223d 0%, var(--bg) 58%) fixed;
+    font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:crosshair;touch-action:none}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  header{position:fixed;top:18px;left:24px;pointer-events:none;user-select:none}
+  header h1{margin:0;font-size:21px;letter-spacing:.34em;font-weight:800}
+  header p{margin:3px 0 0;color:var(--dim);font-size:12px;letter-spacing:.1em}
+  #panel{position:fixed;top:16px;right:16px;display:flex;flex-direction:column;gap:10px;
+    background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border:1px solid var(--line);border-radius:14px;padding:12px 14px;max-width:340px;
+    box-shadow:0 14px 44px rgba(0,0,0,.45)}
+  .row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .lab{font-size:10px;letter-spacing:.18em;color:var(--dim);min-width:44px}
+  input[type=range]{flex:1;accent-color:var(--acc);min-width:104px}
+  #rpmv{color:var(--acc);font-size:12px;min-width:52px;text-align:right}
+  .chip{border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--ink);
+    border-radius:999px;padding:3px 10px;font-size:12px;cursor:pointer;line-height:1.5}
+  .chip:hover{border-color:var(--acc);color:var(--acc)}
+  .chip.on{background:rgba(90,215,255,.15);border-color:var(--acc);color:var(--acc)}
+  .chip kbd{font:10px ui-monospace,monospace;color:var(--faint);border:1px solid var(--line);
+    border-radius:4px;padding:0 4px;margin-left:5px}
+  #card{position:fixed;left:24px;bottom:46px;display:none;gap:18px;align-items:baseline;
+    background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border:1px solid var(--line);border-radius:14px;padding:12px 18px;
+    box-shadow:0 14px 44px rgba(0,0,0,.45)}
+  #card .kv{display:flex;flex-direction:column;gap:1px}
+  #card .kv span{font-size:9.5px;letter-spacing:.16em;color:var(--dim)}
+  #card .kv b{font-size:15px;font-weight:600;color:var(--ink);white-space:nowrap}
+  #cName{font-size:12px;color:var(--acc);letter-spacing:.06em;white-space:nowrap}
+  #stall{position:fixed;top:84px;left:50%;transform:translateX(-50%);display:none;
+    color:var(--warn);background:rgba(60,16,20,.65);border:1px solid rgba(255,107,107,.4);
+    border-radius:999px;padding:5px 16px;font-size:12px;letter-spacing:.08em;
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+  #hints{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);color:var(--faint);
+    font-size:11.5px;letter-spacing:.04em;user-select:none;pointer-events:none;
+    white-space:nowrap;max-width:96vw;overflow:hidden;text-overflow:ellipsis}
+  #toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%);opacity:0;
+    background:var(--panel);border:1px solid var(--line);border-radius:999px;
+    padding:6px 16px;font-size:12.5px;color:var(--ink);transition:opacity .25s;
+    pointer-events:none;backdrop-filter:blur(8px)}
+  @media (max-width:760px){
+    header p{display:none} #hints{display:none}
+    #card{left:12px;right:12px;bottom:14px;gap:10px;padding:10px 12px;flex-wrap:wrap}
+    #card .kv b{font-size:13px}
+  }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<header><h1>GEARWORKS</h1><p>involute gear-train playground</p></header>
+
+<div id="panel">
+  <div class="row">
+    <span class="lab">MOTOR</span>
+    <input id="rpm" type="range" min="2" max="90" value="18">
+    <span id="rpmv" class="mono">18 rpm</span>
+    <button id="rev" class="chip" title="reverse direction">⟲</button>
+  </div>
+  <div class="row"><span class="lab">TEETH</span><span id="chips" class="row" style="gap:5px"></span></div>
+  <div class="row">
+    <button id="bstack" class="chip">⊕ stack<kbd>S</kbd></button>
+    <button id="bdel" class="chip">✕ delete<kbd>⌫</kbd></button>
+    <button id="bdemo" class="chip">demo</button>
+    <button id="bclear" class="chip">clear</button>
+  </div>
+</div>
+
+<div id="card">
+  <div id="cName">gear</div>
+  <div class="kv"><span>TEETH</span><b id="cTeeth" class="mono">—</b></div>
+  <div class="kv"><span>SPEED</span><b id="cRpm" class="mono">—</b></div>
+  <div class="kv"><span>RATIO</span><b id="cRatio" class="mono">—</b></div>
+  <div class="kv"><span>TORQUE</span><b id="cTorq" class="mono">—</b></div>
+</div>
+
+<div id="stall">⚠ TRAIN STALLED — a gear loop is fighting itself</div>
+<div id="hints">click bg: add gear · drag gear: move · scroll gear: resize · scroll bg: zoom · drag bg: pan · S: stack pinion · ⌫: delete</div>
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* ============================== constants ============================== */
+const M   = 12;                       // gear module, px (tooth size; shared so any pair meshes)
+const PA  = 20 * Math.PI / 180;       // pressure angle
+const TAU = Math.PI * 2;
+const TOOTH_CHOICES = [8, 11, 12, 16, 20, 24, 28, 36, 48];
+const PALETTE = [
+  ['#bcc7d8', '#6e7990'], // steel
+  ['#dcba76', '#8a6c35'], // brass
+  ['#9fb9da', '#50708f'], // blued steel
+  ['#d99e82', '#8a5340'], // copper
+  ['#a9b1be', '#586273'], // gunmetal
+];
+const MOTOR_COL = ['#ffbd66', '#b3591e'];
+const SAVE_KEY  = 'gearworks-v1';
+
+/* ============================== state ============================== */
+let gears = [];                       // {id,N,x,y,theta,w,motor,stackOf,off,col,path,rp,ra,rr,bore,driven,jam}
+let nextId = 1, selId = null;
+let pick = 20, rpm = 18, dir = 1;
+let view = { s: 1, x: 0, y: 0 };
+let stalled = false;
+
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const mod1  = x => ((x % 1) + 1) % 1;
+const byId  = id => gears.find(g => g.id === id);
+
+/* ============================== gear geometry ============================== */
+function gearPath(N) {
+  const rp = M * N / 2, rb = rp * Math.cos(PA), ra = rp + M;
+  const rr = Math.max(rp - 1.25 * M, rp * 0.18);
+  const inv = a => Math.tan(a) - a;
+  // half-angular-thickness of a tooth flank at radius r (true involute)
+  const gam = r => {
+    const al = Math.acos(Math.min(1, rb / Math.max(r, rb)));
+    return Math.PI / (2 * N) + inv(PA) - inv(al);
+  };
+  const r0 = Math.max(rr, rb), gB = gam(r0), gT = gam(ra), pitch = TAU / N, S = 7;
+  const p = new Path2D();
+  for (let k = 0; k < N; k++) {
+    const c = k * pitch;
+    p.arc(0, 0, rr, c - pitch + gB, c - gB);                    // root land
+    for (let i = 0; i <= S; i++) {                              // left flank (involute)
+      const r = r0 + (ra - r0) * i / S, a = c - gam(r);
+      p.lineTo(r * Math.cos(a), r * Math.sin(a));
+    }
+    p.arc(0, 0, ra, c - gT, c + gT);                            // tip land
+    for (let i = S; i >= 0; i--) {                              // right flank
+      const r = r0 + (ra - r0) * i / S, a = c + gam(r);
+      p.lineTo(r * Math.cos(a), r * Math.sin(a));
+    }
+  }
+  p.closePath();
+  // bore + lightening holes (rendered with even-odd fill)
+  const bore = M * 0.95;
+  p.moveTo(bore, 0); p.arc(0, 0, bore, 0, TAU);
+  const innerR = 2.3 * M, outerR = rr - 1.2 * M;
+  if (outerR - innerR > 1.7 * M) {
+    const n = clamp(Math.round(N / 6), 4, 7), ring = (innerR + outerR) / 2;
+    const hr = Math.min((outerR - innerR) * 0.42, ring * Math.sin(Math.PI / n) * 0.62);
+    for (let i = 0; i < n; i++) {
+      const a = i * TAU / n + TAU / (2 * n);
+      const hx = ring * Math.cos(a), hy = ring * Math.sin(a);
+      p.moveTo(hx + hr, hy); p.arc(hx, hy, hr, 0, TAU);
+    }
+  }
+  return p;
+}
+
+function geom(g) {
+  g.rp = M * g.N / 2; g.ra = g.rp + M;
+  g.rr = Math.max(g.rp - 1.25 * M, g.rp * 0.18);
+  g.bore = M * 0.95;
+  g.path = gearPath(g.N);
+}
+
+function mk(N, x, y, extra = {}) {
+  const g = { id: nextId++, N, x, y, theta: 0, w: 0, motor: false, born: performance.now(),
+              stackOf: null, off: 0, driven: false, jam: false, ...extra };
+  geom(g);
+  g.col = g.motor ? MOTOR_COL : PALETTE[g.id % PALETTE.length];
+  gears.push(g);
+  return g;
+}
+
+/* ============================== stacks (compound gears) ============================== */
+function stackRoot(g) {
+  let p = g;
+  while (p.stackOf) { const q = byId(p.stackOf); if (!q) break; p = q; }
+  return p;
+}
+function depth(g) {
+  let d = 0, p = g;
+  while (p.stackOf) { const q = byId(p.stackOf); if (!q) break; d++; p = q; }
+  return d;
+}
+function descendants(root) {
+  return gears.filter(g => {
+    let p = g;
+    while (p.stackOf) { p = byId(p.stackOf); if (!p) return false; if (p.id === root.id) return true; }
+    return false;
+  });
+}
+function moveStack(root, nx, ny) {
+  const dx = nx - root.x, dy = ny - root.y;
+  for (const g of [root, ...descendants(root)]) { g.x += dx; g.y += dy; }
+}
+function stackSet(root) { return new Set([root.id, ...descendants(root).map(g => g.id)]); }
+
+/* ============================== kinematics ============================== */
+function edgesOf() {
+  const E = [];
+  for (let i = 0; i < gears.length; i++) for (let j = i + 1; j < gears.length; j++) {
+    const a = gears[i], b = gears[j];
+    if (a.stackOf === b.id || b.stackOf === a.id) { E.push([a, b, 's']); continue; }
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (Math.abs(d - (a.rp + b.rp)) < 0.45 * M) E.push([a, b, 'm']);
+  }
+  return E;
+}
+
+// tooth-phase mismatch at the mesh point, in fractions of a tooth pitch (0 = perfect)
+function meshErr(u, v) {
+  const phi = Math.atan2(v.y - u.y, v.x - u.x);
+  const e = mod1((phi - u.theta) * u.N / TAU + (phi + Math.PI - v.theta) * v.N / TAU - 0.5);
+  return Math.min(e, 1 - e);
+}
+
+// rotation for v so its gap faces u's tooth at the mesh point; nearest solution = no visual jump
+function solveTheta(u, v) {
+  const phi = Math.atan2(v.y - u.y, v.x - u.x);
+  const base = phi + Math.PI - (TAU / v.N) * (0.5 - (phi - u.theta) * u.N / TAU);
+  const pitch = TAU / v.N;
+  return base + pitch * Math.round((v.theta - base) / pitch);
+}
+
+function solve(dt) {
+  const motor = gears.find(g => g.motor);
+  if (!motor) { stalled = false; return; }
+  const old = gears.map(g => g.theta);
+  for (const g of gears) { g.w = 0; g.driven = false; g.jam = false; }
+
+  const wM = dir * rpm * TAU / 60;
+  motor.w = wM; motor.theta += wM * dt; motor.driven = true;
+
+  const adj = new Map(gears.map(g => [g.id, []]));
+  for (const [a, b, t] of edgesOf()) { adj.get(a.id).push([b, t]); adj.get(b.id).push([a, t]); }
+
+  const q = [motor], seen = new Set([motor.id]);
+  let jam = false;
+  while (q.length) {
+    const u = q.shift();
+    for (const [v, t] of adj.get(u.id)) {
+      const wv = t === 's' ? u.w : -u.w * u.N / v.N;
+      if (!seen.has(v.id)) {
+        seen.add(v.id); v.driven = true; v.w = wv;
+        if (t === 's') v.theta = (v.stackOf === u.id) ? u.theta + v.off : u.theta - u.off;
+        else v.theta = solveTheta(u, v);
+        q.push(v);
+      } else if (Math.abs(wv - v.w) > 1e-6 * Math.max(1, Math.abs(wv))) jam = true;
+      else if (t === 'm' && meshErr(u, v) > 0.22) jam = true;
+    }
+  }
+  stalled = jam;
+  if (jam) gears.forEach((g, i) => {
+    g.theta = old[i];
+    if (seen.has(g.id)) { g.jam = true; g.w = 0; }
+  });
+}
+
+/* ============================== rendering ============================== */
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+let dpr = 1, W = 0, H = 0;
+
+function resize() {
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+}
+let viewTouched = false;                 // until the user pans/zooms, keep the scene auto-fitted
+addEventListener('resize', () => { resize(); if (!viewTouched) fitView(); });
+
+function grid() {
+  const modp = (a, b) => ((a % b) + b) % b;
+  ctx.lineWidth = 1;
+  const draw = (step, color) => {
+    const x0 = modp(view.x, step), y0 = modp(view.y, step);
+    ctx.strokeStyle = color; ctx.beginPath();
+    for (let x = x0; x < W; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+    for (let y = y0; y < H; y += step) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+    ctx.stroke();
+  };
+  const s = 60 * view.s;
+  draw(s, 'rgba(120,165,255,.05)');
+  draw(s * 5, 'rgba(120,165,255,.085)');
+}
+
+function drawGear(g) {
+  ctx.save();
+  ctx.translate(g.x, g.y);
+  if (depth(g) > 0) { ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 4; }
+  if (!g.driven && !g.motor) ctx.globalAlpha = 0.8;
+
+  ctx.rotate(g.theta);
+  const grad = ctx.createRadialGradient(-g.rp * .35, -g.rp * .35, g.rp * .1, 0, 0, g.ra);
+  grad.addColorStop(0, g.col[0]); grad.addColorStop(1, g.col[1]);
+  ctx.fillStyle = grad;
+  ctx.fill(g.path, 'evenodd');
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.lineWidth = 1.2; ctx.strokeStyle = 'rgba(10,15,25,.55)'; ctx.stroke(g.path);
+
+  ctx.setLineDash([4, 7]);                                   // pitch circle, blueprint-style
+  ctx.beginPath(); ctx.arc(0, 0, g.rp, 0, TAU);
+  ctx.strokeStyle = 'rgba(12,18,30,.35)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.setLineDash([]);
+
+  const mr = Math.min(g.rr - 5, g.bore + M * 0.85);           // index dot — makes spin visible
+  if (mr > g.bore + 2) {
+    ctx.beginPath(); ctx.arc(mr, 0, 2.6, 0, TAU);
+    ctx.fillStyle = 'rgba(10,16,28,.5)'; ctx.fill();
+  }
+  ctx.rotate(-g.theta);
+
+  ctx.beginPath(); ctx.arc(0, 0, g.bore - 2.5, 0, TAU);       // shaft
+  ctx.fillStyle = g.motor ? '#2b1608' : '#10182a'; ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = g.motor ? MOTOR_COL[0] : 'rgba(160,185,220,.4)'; ctx.stroke();
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(228,238,252,.9)';
+  ctx.font = '600 11px ui-monospace,Menlo,monospace';
+  ctx.fillText(g.N + 'T', 0, g.bore + M * 0.95);
+  if (g.motor) {
+    ctx.fillStyle = MOTOR_COL[0]; ctx.font = '700 9px ui-sans-serif,system-ui';
+    ctx.fillText('M O T O R', 0, g.bore + M * 1.9);
+  }
+
+  if (g.id === selId) {
+    ctx.beginPath(); ctx.arc(0, 0, g.ra + 7, 0, TAU);
+    ctx.strokeStyle = 'rgba(90,215,255,.95)'; ctx.lineWidth = 2;
+    ctx.shadowColor = 'rgba(90,215,255,.8)'; ctx.shadowBlur = 14;
+    ctx.stroke(); ctx.shadowBlur = 0;
+  }
+  if (g.jam) {
+    ctx.beginPath(); ctx.arc(0, 0, g.ra + 3, 0, TAU);
+    ctx.setLineDash([6, 6]); ctx.strokeStyle = 'rgba(255,107,107,.9)';
+    ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+
+function draw() {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  grid();
+  ctx.translate(view.x, view.y);
+  ctx.scale(view.s, view.s);
+  const order = [...gears].sort((a, b) => depth(a) - depth(b) || a.id - b.id);
+  for (const g of order) drawGear(g);
+}
+
+/* ============================== interaction ============================== */
+const s2w = (sx, sy) => ({ x: (sx - view.x) / view.s, y: (sy - view.y) / view.s });
+
+function pickAt(w) {
+  const order = [...gears].sort((a, b) => depth(a) - depth(b) || a.id - b.id).reverse();
+  return order.find(g => Math.hypot(w.x - g.x, w.y - g.y) <= g.ra + 3) || null;
+}
+
+// magnetic snap: pull the dragged stack so its best candidate pair meshes exactly
+function magnet(root) {
+  const set = stackSet(root);
+  let best = null;
+  for (const s of gears) {
+    if (!set.has(s.id)) continue;
+    for (const g of gears) {
+      if (set.has(g.id)) continue;
+      const d = Math.hypot(s.x - g.x, s.y - g.y);
+      if (d < 1) continue;
+      const targ = s.rp + g.rp, delta = Math.abs(d - targ);
+      if (delta < 1.3 * M && (!best || delta < best.delta)) best = { s, g, d, targ, delta };
+    }
+  }
+  if (best) {
+    const ux = (best.s.x - best.g.x) / best.d, uy = (best.s.y - best.g.y) / best.d;
+    const shift = best.targ - best.d;
+    moveStack(root, root.x + ux * shift, root.y + uy * shift);
+  }
+}
+
+function addAt(x, y) {
+  const g = mk(pick, x, y);
+  let best = null;
+  for (const o of gears) {
+    if (o === g) continue;
+    const d = Math.hypot(g.x - o.x, g.y - o.y);
+    if (d < 1) continue;
+    const targ = g.rp + o.rp, score = Math.abs(d - targ);
+    if ((score < 2.4 * M || d < g.ra + o.ra) && (!best || score < best.score))
+      best = { o, d, targ, score };
+  }
+  if (best) {
+    const ux = (g.x - best.o.x) / best.d, uy = (g.y - best.o.y) / best.d;
+    g.x = best.o.x + ux * best.targ; g.y = best.o.y + uy * best.targ;
+  }
+  selId = g.id;
+  save();
+  return g;
+}
+
+function setTeeth(g, N) {
+  N = clamp(N, 8, 60);
+  if (N === g.N) return;
+  g.N = N; geom(g);
+  if (!g.stackOf) {                                  // re-seat against closest partner
+    let best = null;
+    for (const o of gears) {
+      if (o === g || o.stackOf === g.id) continue;
+      const d = Math.hypot(g.x - o.x, g.y - o.y);
+      if (d < 1) continue;
+      const delta = Math.abs(d - (g.rp + o.rp));
+      if (delta < 2.6 * M && (!best || delta < best.delta)) best = { o, d, delta };
+    }
+    if (best) {
+      const targ = g.rp + best.o.rp;
+      const ux = (g.x - best.o.x) / best.d, uy = (g.y - best.o.y) / best.d;
+      moveStack(g, best.o.x + ux * targ, best.o.y + uy * targ);
+    }
+  }
+  save();
+}
+
+let drag = null;
+cv.addEventListener('pointerdown', e => {
+  try { cv.setPointerCapture(e.pointerId); } catch { /* synthetic or already-released pointer */ }
+  const w = s2w(e.clientX, e.clientY), g = pickAt(w);
+  if (g) {
+    selId = g.id;
+    const root = stackRoot(g);
+    drag = { type: 'gear', root: root.id, dx: w.x - root.x, dy: w.y - root.y, moved: false,
+             sx: e.clientX, sy: e.clientY };
+    cv.style.cursor = 'grabbing';
+  } else {
+    drag = { type: 'pan', vx: view.x, vy: view.y, sx: e.clientX, sy: e.clientY, moved: false };
+  }
+});
+cv.addEventListener('pointermove', e => {
+  if (!drag) {
+    cv.style.cursor = pickAt(s2w(e.clientX, e.clientY)) ? 'grab' : 'crosshair';
+    return;
+  }
+  if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 4) drag.moved = true;
+  if (drag.type === 'pan') {
+    view.x = drag.vx + (e.clientX - drag.sx);
+    view.y = drag.vy + (e.clientY - drag.sy);
+    if (drag.moved) viewTouched = true;
+  } else {
+    const root = byId(drag.root);
+    if (!root) { drag = null; return; }
+    const w = s2w(e.clientX, e.clientY);
+    moveStack(root, w.x - drag.dx, w.y - drag.dy);
+    magnet(root);
+  }
+});
+cv.addEventListener('pointerup', e => {
+  if (!drag) return;
+  if (drag.type === 'pan' && !drag.moved) {
+    const w = s2w(e.clientX, e.clientY);
+    addAt(w.x, w.y);
+  }
+  if (drag.type === 'gear') save();
+  drag = null;
+  cv.style.cursor = 'crosshair';
+});
+cv.addEventListener('pointercancel', () => { drag = null; cv.style.cursor = 'crosshair'; });
+cv.addEventListener('dblclick', e => {
+  const g = pickAt(s2w(e.clientX, e.clientY));
+  // ignore gears younger than the double-click itself (first click just placed them)
+  if (g && performance.now() - (g.born || 0) > 400) deleteGear(g);
+});
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  const g = pickAt(s2w(e.clientX, e.clientY));
+  if (g) setTeeth(g, g.N + (e.deltaY < 0 ? 1 : -1));
+  else {
+    const ns = clamp(view.s * Math.exp(-e.deltaY * 0.0012), 0.3, 2.4);
+    view.x = e.clientX - (e.clientX - view.x) * (ns / view.s);
+    view.y = e.clientY - (e.clientY - view.y) * (ns / view.s);
+    view.s = ns;
+    viewTouched = true;
+  }
+}, { passive: false });
+
+function deleteGear(g) {
+  if (!g) return;
+  if (g.motor) { toast('the motor stays — everything else is fair game'); return; }
+  const dead = new Set([g.id, ...descendants(g).map(d => d.id)]);
+  gears = gears.filter(x => !dead.has(x.id));
+  if (dead.has(selId)) selId = null;
+  save();
+}
+function stackOnSelected() {
+  const g = byId(selId);
+  if (!g) { toast('select a gear first, then stack a pinion on its shaft'); return; }
+  const c = mk(pick, g.x, g.y, { stackOf: g.id });
+  c.theta = g.theta; c.off = 0;
+  selId = c.id;
+  save();
+}
+
+addEventListener('keydown', e => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+  if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); deleteGear(byId(selId)); }
+  if (e.key === 's' || e.key === 'S') stackOnSelected();
+});
+
+/* ============================== UI panel ============================== */
+const $ = id => document.getElementById(id);
+const rpmEl = $('rpm'), rpmv = $('rpmv'), chipsEl = $('chips');
+
+function syncUI() {
+  rpmEl.value = rpm;
+  rpmv.textContent = rpm + ' rpm';
+  chipsEl.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', +c.dataset.n === pick));
+}
+for (const n of TOOTH_CHOICES) {
+  const b = document.createElement('button');
+  b.className = 'chip'; b.dataset.n = n; b.textContent = n;
+  b.onclick = () => { pick = n; syncUI(); save(); };
+  chipsEl.appendChild(b);
+}
+rpmEl.addEventListener('input', () => { rpm = +rpmEl.value; syncUI(); save(); });
+$('rev').onclick = () => { dir *= -1; save(); };
+$('bstack').onclick = stackOnSelected;
+$('bdel').onclick = () => deleteGear(byId(selId));
+$('bdemo').onclick = () => { demo(); save(); };
+$('bclear').onclick = () => {
+  gears = gears.filter(g => g.motor);
+  selId = gears.length ? gears[0].id : null;
+  save();
+};
+
+let toastT = null;
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg; t.style.opacity = 1;
+  clearTimeout(toastT);
+  toastT = setTimeout(() => t.style.opacity = 0, 1900);
+}
+
+/* ============================== info card ============================== */
+const fmt = x => x >= 100 ? x.toFixed(0) : x >= 10 ? x.toFixed(1) : x.toFixed(2);
+function updCard() {
+  const g = byId(selId), card = $('card');
+  card.style.display = g ? 'flex' : 'none';
+  $('stall').style.display = stalled ? 'block' : 'none';
+  if (!g) return;
+  const motor = gears.find(x => x.motor);
+  $('cName').textContent = g.motor ? 'MOTOR PINION' : `GEAR #${g.id}${g.stackOf ? ' · stacked' : ''}`;
+  $('cTeeth').textContent = g.N + 'T';
+  const spinning = g.driven && Math.abs(g.w) > 1e-9;
+  $('cRpm').textContent = spinning
+    ? `${fmt(Math.abs(g.w) * 60 / TAU)} rpm ${g.w > 0 ? 'CW' : 'CCW'}`
+    : (g.jam || (g.motor && stalled)) ? 'stalled' : 'idle';
+  if (g.motor) { $('cRatio').textContent = 'driver'; $('cTorq').textContent = '× 1'; }
+  else if (spinning && motor) {
+    const r = Math.abs(motor.w / g.w);
+    $('cRatio').textContent = r >= 1 ? `${fmt(r)} : 1` : `1 : ${fmt(1 / r)}`;
+    $('cTorq').textContent = '× ' + fmt(r);
+  } else { $('cRatio').textContent = '—'; $('cTorq').textContent = '—'; }
+}
+
+/* ============================== scenes & persistence ============================== */
+function addMeshedAt(p, N, deg) {
+  const a = deg * Math.PI / 180, d = p.rp + M * N / 2;
+  return mk(N, p.x + Math.cos(a) * d, p.y + Math.sin(a) * d);
+}
+function demo() {
+  gears = []; nextId = 1; selId = null;
+  const m0 = mk(11, 0, 0, { motor: true });          // 11T — same as the disc-shooter pinion
+  const a  = addMeshedAt(m0, 40, -10);
+  const a2 = mk(12, a.x, a.y, { stackOf: a.id });
+  const b  = addMeshedAt(a2, 36, 55);
+  addMeshedAt(m0, 16, 165);
+  rpm = 18; dir = 1; selId = b.id;
+  fitView(); syncUI();
+}
+function fitView() {
+  if (!gears.length) return;
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const g of gears) {
+    x0 = Math.min(x0, g.x - g.ra); y0 = Math.min(y0, g.y - g.ra);
+    x1 = Math.max(x1, g.x + g.ra); y1 = Math.max(y1, g.y + g.ra);
+  }
+  const s = clamp(Math.min((W - 150) / (x1 - x0), (H - 230) / (y1 - y0)), 0.3, 1.1);
+  view.s = s;
+  view.x = W / 2 - (x0 + x1) / 2 * s;
+  view.y = (H + 46) / 2 - (y0 + y1) / 2 * s;
+}
+
+function save() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      g: gears.map(({ id, N, x, y, motor, stackOf, off }) =>
+        ({ id, N, x: +x.toFixed(2), y: +y.toFixed(2), motor, stackOf, off })),
+      nextId, rpm, dir, pick, selId,
+    }));
+  } catch { /* private mode etc. — playground still works, just won't persist */ }
+}
+function load() {
+  try {
+    if (new URLSearchParams(location.search).has('demo')) return false;
+    const d = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (!d || !Array.isArray(d.g) || !d.g.some(g => g.motor)) return false;
+    gears = d.g.map(o => {
+      const g = {
+        id: +o.id, N: clamp(Math.round(+o.N) || 20, 8, 60),
+        x: isFinite(+o.x) ? +o.x : 0, y: isFinite(+o.y) ? +o.y : 0,
+        motor: !!o.motor, stackOf: o.stackOf ?? null, off: isFinite(+o.off) ? +o.off : 0,
+        theta: 0, w: 0, driven: false, jam: false, born: 0,
+      };
+      geom(g);
+      g.col = g.motor ? MOTOR_COL : PALETTE[g.id % PALETTE.length];
+      return g;
+    }).filter(g => Number.isFinite(g.id));
+    const ids = new Set(gears.map(g => g.id));
+    for (const g of gears) if (g.stackOf != null && !ids.has(g.stackOf)) g.stackOf = null;
+    if (!gears.some(g => g.motor)) return false;
+    nextId = Math.max(d.nextId || 1, ...gears.map(g => g.id + 1));
+    rpm = clamp(+d.rpm || 18, 2, 90); dir = d.dir === -1 ? -1 : 1;
+    pick = TOOTH_CHOICES.includes(d.pick) ? d.pick : 20;
+    selId = ids.has(d.selId) ? d.selId : null;
+    fitView();
+    syncUI();
+    return true;
+  } catch { return false; }
+}
+
+/* ============================== main loop ============================== */
+let tPrev = 0;
+function loop(t) {
+  const dt = clamp((t - tPrev) / 1000, 0, 0.05);
+  tPrev = t;
+  if (W !== innerWidth || H !== innerHeight) {   // viewport changed without a resize event
+    resize();
+    if (!viewTouched) fitView();
+  }
+  solve(dt);
+  draw();
+  updCard();
+  requestAnimationFrame(loop);
+}
+
+resize();
+if (!load()) { demo(); save(); }
+syncUI();
+requestAnimationFrame(loop);
+
+/* debug / verification hooks */
+window.GW = {
+  get gears() { return gears; },
+  addAt, demo, fitView,
+  del: id => deleteGear(byId(id)),
+  tick(dt = 1 / 60) { solve(dt); draw(); updCard(); },   // force a frame (rAF pauses in background tabs)
+  check() {
+    const meshes = edgesOf().filter(e => e[2] === 'm');
+    let maxPhaseErr = 0;
+    for (const [a, b] of meshes) maxPhaseErr = Math.max(maxPhaseErr, meshErr(a, b));
+    const m = gears.find(g => g.motor);
+    return {
+      meshes: meshes.length, stalled,
+      maxPhaseErr: +maxPhaseErr.toFixed(5),
+      ratios: !m ? [] : gears.filter(g => !g.motor && g.driven && Math.abs(g.w) > 1e-12)
+        .map(g => ({ id: g.id, N: g.N, ratio: +(m.w / g.w).toFixed(4) })),
+    };
+  },
+};
+</script>
+</body>
+</html>
