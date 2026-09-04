@@ -6,12 +6,15 @@ Click to drop gears onto a blueprint canvas — they snap into mesh and spin wit
 kinematics. Build compound reductions by stacking pinions on shafts, read live ratio and
 torque numbers, and watch the whole drivetrain stall if you wire up a loop that can't turn.
 
+![Gearworks demo scene: an 11-tooth motor pinion driving a two-stage 10.9 : 1 compound reduction](docs/screenshot.png)
+
 ## Run it
 
 No build, no dependencies:
 
 - double-click `index.html`, or
-- `python3 -m http.server 9412 --directory .` and open http://localhost:9412
+- `python3 -m http.server 9412 --directory .` and open http://localhost:9412, or
+- `npx serve -l 9412 .` if you have Node but not Python
 
 Append `?demo` to the URL to reset to the demo scene (a two-stage 10.9 : 1 compound
 reduction driven by an 11-tooth pinion).
@@ -44,6 +47,11 @@ Scenes autosave to `localStorage`.
 
 A debug API is exposed at `window.GW` (`GW.check()` reports mesh count, max phase error,
 and per-gear ratios; `GW.tick()` forces a frame when rAF is paused in background tabs).
+
+## Status
+
+Stable and feature-complete for what it is: one HTML file, no build step, no
+dependencies. Bug reports and pull requests are welcome.
 
 ## Deploy (Vercel)
 
