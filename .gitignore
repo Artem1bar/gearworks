@@ -23,3 +23,5 @@ test-results/
 .gstack/
 .DS_Store
 *.log
+.vercel
+.env*
