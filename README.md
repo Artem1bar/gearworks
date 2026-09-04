@@ -56,6 +56,10 @@ vercel --prod # production
 
 …or import the GitHub repo in the Vercel dashboard — no build settings needed.
 
+## Built with
+
+Built with Claude Code, Anthropic's agentic coding tool.
+
 ## License
 
 [MIT](LICENSE)
