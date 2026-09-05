@@ -2,7 +2,7 @@
 
 An interactive **involute gear-train playground** in a single dependency-free HTML file.
 
-**Live:** [gearworks.vercel.app](https://gearworks.vercel.app)
+**Live:** [gearworks.vercel.app](https://gearworks-silk.vercel.app)
 
 Click to drop gears onto a blueprint canvas — they snap into mesh and spin with correct
 kinematics. Build compound reductions by stacking pinions on shafts, read live ratio and
